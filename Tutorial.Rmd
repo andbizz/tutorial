@@ -4,25 +4,29 @@ author: "Andrea Bizzotto"
 date: "8/3/2022"
 output: html_document
 ---
-The purpose of this tutorial is to provide advice, in order to fit epidemic data, using the Hamiltonian Monte Carlo method, implemented with package Rstan.
+The purpose of this tutorial is to provide advice and guidance in fitting a deterministic compartmental model to epidemic data, using the Hamiltonian Monte Carlo method, implemented via the package Rstan.
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
-## Genetion of the synthetic data
-The synthetic data are useful because are obtained from a framework presettled by ourself. So the results that we want to obtain are known. Therefore we need to create the data to be fitted using our statistical model. Let's start with a simple SIR model: Simptomatics, Infected, Removed, and our goal is to obtain a reasonable (posterior) distribution of the parameters involved in the model.
+## Generation of the simualted data
+Simulated data are useful because they are generated from a statistical process whose parameters we know for certain. This allows us to check that our model is behaving as we expect, as we know what results we expect to obtain. First, let's start with a simple SIR model: Susceptible, Infectious, Recovered. Our goal is to obtain a reasonable (posterior) distribution of the parameters involved in the model.
+
 We recall that a SIR model is described by the differential equations
 $$
 S'=-\beta\,\displaystyle\frac{I}{N}\,S\\
 I'=\beta\,\displaystyle\frac{I}{N}\,S-\gamma\,I\\
 R'=\gamma\,I
 $$
-where $\beta$ is the infectivity and $\displaystyle\frac{1}{\gamma}$ is called recovery rate.
-In this mode one can prove that the basic reproduction number is the multiplication between the infectivity and the average time spent in the Infected compartment:
+where $\beta$ is the transmission rate and $\gamma$ is the recovery rate.
+
+In this mode one can prove that the basic reproduction number (defined as the expected number of secondary cases produced by a single (typical) infection in a completely susceptible population) is the product of the transmission rate and the average time spent in the infectious compartment $(\displaystyle\frac{1}{\gamma})$:
 $$
 R_0=\displaystyle\frac{\beta}{\gamma}
 $$
-Now we do some hypothesis to create our data. We take into account a time period of 100 days, $T=100$ and a population of 1000 individuals, where the infected at the beginning of the epidemic are only 5. We suppose that at the beginning of the epidemic, one infected generates two infected for day, this means $R_0=2$. Finally the time spent in the infected compartment is one week, so that $\gamma=\displaystyle\frac{1}{7}$. The last two hyphothesis imply $\beta=\displaystyle\frac{2}{7}$.
-Let's start with the coding. The first thing we need is a function, that describes the dynamical system. This function take as input the time, the variables and the parameters.
+Next, lets create the data to be fitted using our statistical model. We assume a time period of 100 days, $T=100$ and a population of 1000 individuals $N=1000$, of which 5 individuals are infectious at the start of the epidemic. We suppose that at the beginning of the epidemic, one infectious individual generates two infectious individuals, or in other words, $R_0=2$. Finally lets assume that the average duration of infection is 1 week, so that $\gamma=\displaystyle\frac{1}{7}$. The last two hypotheses imply $\beta=\displaystyle\frac{2}{7}$.
+
+Now let's start with the coding. The first thing we need is a function that describes the dynamical system. This function take as input the time, the state variables (i.e.,$SIR$) and the parameters (i.e., $\beta$ and $\gamma$). We are going to use the package deSolve to generate the epidemic data based on the above assumptions. 
+
 ```{r }
 library(deSolve)
 library(ggplot2)
@@ -43,12 +47,14 @@ SIR_equations <- function(time, variables, parameters){
   
   dS_dt = - beta * I/N * S;
   dI_dt =   beta * I/N * S - gamma * I;
-  dR_dt =                    gamma * I;
+  dR_dt =   gamma * I;
   
   return(list(c(dS_dt, dI_dt, dR_dt)));
 }
 ```
-Now we define the values of the parameters and the initial conditions, baseed on the hyphotesis made before.
+
+Now, we define the values of the parameters and the initial conditions, based on the hypotheses made above. 
+
 ```{r}
 T <- 100
 N <- 1000;
@@ -62,7 +68,7 @@ initial_values <- c(S = N - I0, I = I0, R = 0);
                        
 parameters_values <- c(beta = beta_value, gamma = gamma_value, N = N);
 ```
-It remains only to solve the ODEs system, with the function $\texttt{ode}$.
+Now all we need to do is to solve the ODEs system, with the function $\texttt{ode}$.
 ```{r}
 SIR <- ode(
     y = initial_values,
@@ -72,13 +78,13 @@ SIR <- ode(
           )
 
 ```
-The variable $\texttt{ODE}$ is a matrix with dimension $100\times 4$, where columns represents the time and the three variables (S,I,R), and each row corresponds to the value of the state at the various time.
-For instance 
+The variable $\texttt{ODE}$ is a matrix with dimension $100\times 4$, where the columns represent the time and the three variables (S,I,R), and each row corresponds to the value of the state at each time point.
+For instance: 
 ```{r}
 SIR[30,]
 ```
-means that at time $t=10$, there are 665.9546 Susceptibles, 133.2848 Infected and 200.7606 Removed. Note that for each time $t$ we have $N=S(t)+I(t)+R(t)$.
-Our purpose is to fit the daily incidence of the Infected ( $Y_{data}$), i.e.
+means that at time $t=10$, there are 665.9546 Susceptibles, 133.2848 Infectious and 200.7606 Recovered. Note that for each time $t$ we have $N=S(t)+I(t)+R(t)$.
+Our purpose is to fit the daily incidence ( $Y_{data}$), i.e. the rate that individuals enter the infectious compartment: 
 $$
 Y_{data}(t) = \beta\,\displaystyle\frac{I(t)}{N}\,S(t)
 $$
@@ -86,7 +92,7 @@ $$
 Y_data <- beta_value * SIR[,3]/N * SIR[,2]
 Y_data <- as.integer(Y_data)
 ```
-We can now visualize the bahaviour of the newly infected per day
+We can now visualize the behavior of the newly infected per day
 
 ```{r }
 plot(time_values,Y_data, xlab = "Times", ylab = "Newly Infected", col = "cornflowerblue",pch = 16)
